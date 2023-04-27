@@ -1,39 +1,126 @@
 import { Inter } from "@next/font/google";
 import { MagnifyingGlassIcon, XMarkIcon } from "@heroicons/react/24/solid";
 import { ChangeEvent, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
+import { Configuration, OpenAIApi } from "openai";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export default function Home() {
     const [query, setQuery] = useState("");
     const [results, setResults] = useState({ __html: "" });
-    const [context, setContext] = useState([]);
+    const [context, setContext] = useState([""]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState("");
     const [showContext, setShowContext] = useState(false);
+
+    // configure openai
+    const configuration = new Configuration({
+        apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY,
+    });
+    const openai = new OpenAIApi(configuration);
+
+    // configure supabase
+    const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+            auth: {
+                persistSession: false,
+                autoRefreshToken: false,
+            },
+        }
+    );
+
+    async function generateEmbedding(input: string) {
+        const sanitizedInput = input.trim();
+
+        // request embeddings from openai
+        const response = await openai.createEmbedding({
+            model: "text-embedding-ada-002",
+            input: sanitizedInput,
+        });
+
+        if (response.status != 200) {
+            throw new Error("embedding request failed");
+        }
+
+        const [responseData] = response.data.data;
+        return responseData.embedding;
+    }
+
+    async function findMatchingEmbeddings(input: string) {
+        const embedding = await generateEmbedding(input);
+
+        const { error: rpcError, data: rpcData } = await supabase.rpc(
+            "match_netflix_titles_descr",
+            {
+                embeddings: embedding,
+                match_threshold: 0.78,
+                match_count: 15,
+            }
+        );
+        if (rpcError) {
+            console.log("Error in finding matching embedding");
+            throw rpcError;
+        }
+
+        return rpcData;
+    }
+
+    async function askGpt(given: string, asked: string) {
+        const prompt = `You are an enthusiastic representative of a Netflix shows collection database who loves to help people! Your name is Netflix man. Given the following titles and descriptions of available shows provided as context, help the user find a few shows that they might be looking for based on the description that they provide. If you are unsure and the answer is not explicity available in the shows descriptions provided to you then say, "Sorry unable to help". In your response, be friendly, introduce yourself, and provide the answer with the reasoning on why you suggested these shows. Format your response in an unordererd HTML list and apply font-semibold css class to the name of the show.
+    
+    Context shows with titles and descriptions:
+    ${given}
+    
+    User Provided Description:
+    ${asked}
+    
+    Answer:
+    `;
+        console.log(prompt);
+
+        const answer = await openai.createCompletion({
+            model: "text-davinci-003",
+            prompt,
+            max_tokens: 2500,
+            temperature: 0.5,
+        });
+
+        console.log(answer.data);
+        return answer.data;
+    }
 
     const askgpt = async () => {
         // setResults({ __html: "" });
         setIsLoading(true);
         setError("");
 
-        const response = await fetch("/api/askgpt", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query }),
-        });
+        try {
+            // look for embeddings to match with the query
+            const response = await findMatchingEmbeddings(query);
+            const shows: string[] = [];
+            for (const r of response) {
+                shows.push(
+                    `Show Title: "${r.show_title}" Show Description: "${r.show_description}"`
+                );
+            }
 
-        setIsLoading(false);
+            // ask gpt for answer
+            const answer = await askGpt(shows.join(", "), query);
+            const choices = answer.choices.map((c) => c.text);
 
-        if (response.status == 504) {
-            setError("The request timed out. Just try again");
-        } else if (response.status !== 200) {
-            console.log(response);
-            setError("Unexpected error. Check console");
-        } else {
-            const data = await response.json();
-            setResults({ __html: data.choices[0] });
-            setContext(data.context);
+            console.log(shows, choices);
+
+            // show the results
+            setResults({ __html: choices.join(" ") });
+            setContext(shows);
+        } catch (e: any) {
+            console.log("something went wrong", e);
+            setError(e.message);
+        } finally {
+            setIsLoading(false);
         }
     };
 
