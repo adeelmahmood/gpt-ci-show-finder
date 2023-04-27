@@ -9,11 +9,13 @@ export default function Home() {
     const [results, setResults] = useState({ __html: "" });
     const [context, setContext] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState("");
     const [showContext, setShowContext] = useState(false);
 
     const askgpt = async () => {
         // setResults({ __html: "" });
         setIsLoading(true);
+        setError("");
 
         const response = await fetch("/api/askgpt", {
             method: "POST",
@@ -21,12 +23,15 @@ export default function Home() {
             body: JSON.stringify({ query }),
         });
 
-        const data = await response.json();
         setIsLoading(false);
 
-        if (response.status !== 200) {
-            console.log(data.error);
+        if (response.status == 504) {
+            setError("The request timed out. Just try again");
+        } else if (response.status !== 200) {
+            console.log(response);
+            setError("Unexpected error. Check console");
         } else {
+            const data = await response.json();
             setResults({ __html: data.choices[0] });
             setContext(data.context);
         }
@@ -70,6 +75,8 @@ export default function Home() {
                         Search
                     </button>
                 </div>
+
+                {error && <div className="mt-4 font-semibold text-red-600">{error}</div>}
 
                 {results.__html && (
                     <div className="relative mt-6 w-full">
