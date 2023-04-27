@@ -1,5 +1,5 @@
 import { Inter } from "@next/font/google";
-import { MagnifyingGlassIcon } from "@heroicons/react/24/solid";
+import { MagnifyingGlassIcon, XMarkIcon } from "@heroicons/react/24/solid";
 import { ChangeEvent, useState } from "react";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -41,15 +41,19 @@ export default function Home() {
 
                 <div className="mt-6">
                     <div className="flex items-center rounded-lg border px-4 py-2 shadow-md">
-                        <MagnifyingGlassIcon className="inline h-6 fill-current text-gray-800 dark:text-gray-200" />
+                        <MagnifyingGlassIcon className="inline h-6 fill-current text-gray-600" />
                         <input
-                            type="search"
+                            type="text"
+                            value={query}
                             className="ml-2 w-full appearance-none border-0 p-2 text-xl text-gray-600 focus:outline-none focus:ring-0 md:p-4 md:text-2xl"
                             placeholder="Find a show by providing some description"
                             onChange={(e: ChangeEvent<HTMLInputElement>) =>
                                 setQuery(e.currentTarget.value)
                             }
                         />
+                        <button onClick={() => setQuery("")}>
+                            <XMarkIcon className="inline h-6 fill-current text-gray-800 md:mr-4" />
+                        </button>
                         <button
                             className="hidden w-40 rounded-lg bg-teal-600 px-4 py-2 text-base font-semibold leading-7 text-white shadow-sm ring-1 ring-teal-600 hover:bg-teal-700 hover:ring-teal-700 disabled:cursor-not-allowed disabled:opacity-50 md:block"
                             onClick={askgpt}
