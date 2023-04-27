@@ -22,11 +22,14 @@ const supabase = createClient(
     }
 );
 
+const LOAD_COUNT = 1000;
+const BATCH_SIZE = 100;
+
 async function loadTitles() {
     console.log("Loading netflix titles from database");
 
     // read titles from database
-    const { error, data } = await supabase.from("netflix_titles").select("*").limit(2);
+    const { error, data } = await supabase.from("netflix_titles").select("*").limit(LOAD_COUNT);
 
     if (error) {
         console.error("Error in reading titles from database");
@@ -36,32 +39,68 @@ async function loadTitles() {
     return data;
 }
 
-async function generateAndUpdateEmbeddings(updateEmbeddings: boolean = false) {
+async function generateAndUpdateEmbeddings() {
     console.log("generating embeddings");
+    let batch = [];
 
     const titles = await loadTitles();
     for (const title of titles) {
-        // request embedding from openai
-        const embedding: number[] = await generateEmbedding(title.description);
+        // add to batch
+        batch.push(title);
 
-        // add embedding to the database
-        if (updateEmbeddings) {
-            const { error, data } = await supabase.from("netflix_titles_descr_embeddings").insert({
-                description: title.description,
-                embeddings: embedding,
-                show_id: title.show_id,
-            });
-            if (error) {
-                console.error("Error in adding embedding to database");
-                throw error;
+        // generate embeddings when batch is full
+        if (batch.length >= BATCH_SIZE) {
+            const batchDescrs = batch.map((b) => b.description);
+            // console.log(
+            //     `>> Ready to generate embeddings for the batch\n-------\n${batchDescrs.join(
+            //         "\n"
+            //     )}\n--------\n\n`
+            // );
+
+            // request embedding from openai
+            const embeddings = await generateEmbeddingsInBatch(batchDescrs);
+
+            // iterate over each embedding
+            for (const embedding of embeddings) {
+                // add embedding to the database
+                const { error, data } = await supabase
+                    .from("netflix_titles_descr_embeddings")
+                    .insert({
+                        description: batch[embedding.index].description,
+                        embeddings: embedding.embedding,
+                        show_id: batch[embedding.index].show_id,
+                    });
+                if (error) {
+                    console.error("Error in adding embedding to database");
+                    throw error;
+                }
             }
+
+            // empty the batch
+            batch = [];
         }
     }
 }
 
-async function generateEmbedding(input: string | string[]) {
-    const sanitizedInput: string[] = Array.isArray(input) ? input : [input];
+async function generateEmbeddingsInBatch(input: string[]) {
+    const sanitizedInput: string[] = input;
     sanitizedInput.forEach((i) => i.trim());
+
+    // request embeddings from openai
+    const response = await openai.createEmbedding({
+        model: "text-embedding-ada-002",
+        input: sanitizedInput,
+    });
+
+    if (response.status != 200) {
+        throw new Error("embedding request failed");
+    }
+
+    return response.data.data;
+}
+
+async function generateEmbedding(input: string) {
+    const sanitizedInput = input.trim();
 
     // request embeddings from openai
     const response = await openai.createEmbedding({
@@ -116,26 +155,18 @@ Answer:
     console.log(answer.data);
 }
 
-function printEmbedding(embedding: number[], inFull: boolean = false) {
-    if (inFull) {
-        console.log(embedding);
-    } else {
-        console.log(`[${embedding[0]},${embedding[1]}...${embedding[embedding.length - 1]}]`);
-    }
-}
-
 async function main() {
-    const query = "family problems";
+    // const query = "family problems";
 
-    // await generateEmbeddings(false);
-    const response = await findMatchingEmbeddings(query);
-    const shows: string[] = [];
-    for (const r of response) {
-        shows.push(`Show Title: "${r.show_title}" Show Description: "${r.show_description}"`);
-    }
+    await generateAndUpdateEmbeddings();
+    // const response = await findMatchingEmbeddings(query);
+    // const shows: string[] = [];
+    // for (const r of response) {
+    //     shows.push(`Show Title: "${r.show_title}" Show Description: "${r.show_description}"`);
+    // }
 
-    const answer = await askGpt(shows.join(", "), query);
-    console.log(answer);
+    // const answer = await askGpt(shows.join(", "), query);
+    // console.log(answer);
 }
 
 main().catch((e) => {

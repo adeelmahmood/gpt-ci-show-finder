@@ -43,7 +43,7 @@ export default function Home() {
                     <div className="flex items-center rounded-lg border px-4 py-2 shadow-md">
                         <MagnifyingGlassIcon className="inline h-6 fill-current text-gray-800 dark:text-gray-200" />
                         <input
-                            type="text"
+                            type="search"
                             className="ml-2 w-full appearance-none border-0 p-2 text-xl text-gray-600 focus:outline-none focus:ring-0 md:p-4 md:text-2xl"
                             placeholder="Find a show by providing some description"
                             onChange={(e: ChangeEvent<HTMLInputElement>) =>

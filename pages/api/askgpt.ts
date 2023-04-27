@@ -20,9 +20,8 @@ const supabase = createClient(
     }
 );
 
-async function generateEmbedding(input: string | string[]) {
-    const sanitizedInput: string[] = Array.isArray(input) ? input : [input];
-    sanitizedInput.forEach((i) => i.trim());
+async function generateEmbedding(input: string) {
+    const sanitizedInput = input.trim();
 
     // request embeddings from openai
     const response = await openai.createEmbedding({
@@ -44,7 +43,7 @@ async function findMatchingEmbeddings(input: string) {
     const { error: rpcError, data: rpcData } = await supabase.rpc("match_netflix_titles_descr", {
         embeddings: embedding,
         match_threshold: 0.78,
-        match_count: 10,
+        match_count: 15,
     });
     if (rpcError) {
         console.log("Error in finding matching embedding");
@@ -55,7 +54,7 @@ async function findMatchingEmbeddings(input: string) {
 }
 
 async function askGpt(given: string, asked: string) {
-    const prompt = `You are an enthusiastic representative of a Netflix shows collection database who loves to help people! Given the following shows titles and descriptions provided as context, help the user find a few shows that they might be looking for based on the description that they provide. If you are unsure and the answer is not explicity available in the shows descriptions provided to you then say, "Sorry unable to help". In your response, first greet the user in a friendly way and then provide the answer with your reasoning on why you suggested these shows. Format your response in an ordererd HTML list and apply font-semibold css class to the name of the show.
+    const prompt = `You are an enthusiastic representative of a Netflix shows collection database who loves to help people! Given the following titles and descriptions of available shows provided as context, help the user find a few shows that they might be looking for based on the description that they provide. If you are unsure and the answer is not explicity available in the shows descriptions provided to you then say, "Sorry unable to help". In your response, be friendly and provide the answer with your reasoning on why you suggested these shows. Format your response in an ordererd HTML list and apply font-semibold css class to the name of the show.
 
 Context shows with titles and descriptions:
 ${given}
@@ -70,7 +69,7 @@ Answer:
     const answer = await openai.createCompletion({
         model: "text-davinci-003",
         prompt,
-        max_tokens: 2000,
+        max_tokens: 2500,
         temperature: 0.5,
     });
 
