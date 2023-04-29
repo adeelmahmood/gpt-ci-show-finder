@@ -9,12 +9,14 @@ const inter = Inter({ subsets: ["latin"] });
 export default function Home() {
     const [query, setQuery] = useState("");
     const [answer, setAnswer] = useState("");
+    const [matches, setMatches] = useState<Show[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState("");
 
     const askgpt = async () => {
         setIsLoading(true);
         setError("");
+        setMatches([]);
 
         // first get matched shows based on query
         const choices = await fetch("/api/search", {
@@ -31,6 +33,7 @@ export default function Home() {
         const chosenShows = choicesJson.map(
             (c: Show) => `Show Title: '${c.show_title}'. Show Description: '${c.show_description}'.`
         );
+        setMatches(choicesJson);
 
         // ask gpt for the answer
         const answer = await fetch("/api/askgpt", {
@@ -113,6 +116,7 @@ export default function Home() {
                                 isLoading && "opacity-25"
                             }`}
                         >
+                            <h2 className="mb-4 text-2xl font-semibold">Answer</h2>
                             <Answer text={answer} />
                         </div>
                         {isLoading && (
@@ -120,6 +124,24 @@ export default function Home() {
                                 Searching...
                             </div>
                         )}
+                    </div>
+                )}
+
+                {matches && matches.length > 0 && (
+                    <div className="relative mt-6 w-full">
+                        <div className="w-full gap-4 rounded-lg border px-4 py-4 shadow-md">
+                            <h2 className="mb-4 text-left text-2xl font-semibold">Matches</h2>
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+                                {matches.map((m) => {
+                                    return (
+                                        <div>
+                                            <span className="font-semibold">{m.show_title}</span> -{" "}
+                                            {m.show_description}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>
