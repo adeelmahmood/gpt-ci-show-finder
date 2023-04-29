@@ -1,12 +1,12 @@
+import { loadEnvConfig } from "@next/env";
 import { createClient } from "@supabase/supabase-js";
-import dotenv from "dotenv";
 import { Configuration, OpenAIApi } from "openai";
 
-dotenv.config({ path: ".env.local" });
+loadEnvConfig("");
 
 // configure openai
 const configuration = new Configuration({
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY,
 });
 const openai = new OpenAIApi(configuration);
 
@@ -22,8 +22,8 @@ const supabase = createClient(
     }
 );
 
-const LOAD_COUNT = 1000;
-const BATCH_SIZE = 100;
+const LOAD_COUNT = 0;
+const BATCH_SIZE = 0;
 
 async function loadTitles() {
     console.log("Loading netflix titles from database");
@@ -156,17 +156,17 @@ Answer:
 }
 
 async function main() {
-    // const query = "family problems";
+    // await generateAndUpdateEmbeddings();
 
-    await generateAndUpdateEmbeddings();
-    // const response = await findMatchingEmbeddings(query);
-    // const shows: string[] = [];
-    // for (const r of response) {
-    //     shows.push(`Show Title: "${r.show_title}" Show Description: "${r.show_description}"`);
-    // }
+    const query = "family problems";
+    const response = await findMatchingEmbeddings(query);
+    const shows: string[] = [];
+    for (const r of response) {
+        shows.push(`Show Title: "${r.show_title}" Show Description: "${r.show_description}"`);
+    }
 
-    // const answer = await askGpt(shows.join(", "), query);
-    // console.log(answer);
+    const answer = await askGpt(shows.join(", "), query);
+    console.log(answer);
 }
 
 main().catch((e) => {

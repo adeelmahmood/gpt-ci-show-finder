@@ -1,6 +1,10 @@
-import { createClient } from "@supabase/supabase-js";
+import { ParsedEvent, ReconnectInterval, createParser } from "eventsource-parser";
 import { NextApiRequest, NextApiResponse } from "next";
 import { Configuration, OpenAIApi } from "openai";
+
+export const config = {
+    runtime: "edge",
+};
 
 // configure openai
 const configuration = new Configuration({
@@ -8,52 +12,10 @@ const configuration = new Configuration({
 });
 const openai = new OpenAIApi(configuration);
 
-// configure supabase
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-        auth: {
-            persistSession: false,
-            autoRefreshToken: false,
-        },
-    }
-);
-
-async function generateEmbedding(input: string) {
-    const sanitizedInput = input.trim();
-
-    // request embeddings from openai
-    const response = await openai.createEmbedding({
-        model: "text-embedding-ada-002",
-        input: sanitizedInput,
-    });
-
-    if (response.status != 200) {
-        throw new Error("embedding request failed");
-    }
-
-    const [responseData] = response.data.data;
-    return responseData.embedding;
-}
-
-async function findMatchingEmbeddings(input: string) {
-    const embedding = await generateEmbedding(input);
-
-    const { error: rpcError, data: rpcData } = await supabase.rpc("match_netflix_titles_descr", {
-        embeddings: embedding,
-        match_threshold: 0.78,
-        match_count: 15,
-    });
-    if (rpcError) {
-        console.log("Error in finding matching embedding");
-        throw rpcError;
-    }
-
-    return rpcData;
-}
-
 async function askGpt(given: string, asked: string) {
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+
     const prompt = `You are an enthusiastic representative of a Netflix shows collection database who loves to help people! Your name is Netflix man. Given the following titles and descriptions of available shows provided as context, help the user find a few shows that they might be looking for based on the description that they provide. If you are unsure and the answer is not explicity available in the shows descriptions provided to you then say, "Sorry unable to help". In your response, be friendly, introduce yourself, and provide the answer with the reasoning on why you suggested these shows. Format your response in an unordererd HTML list and apply font-semibold css class to the name of the show.
 
 Context shows with titles and descriptions:
@@ -64,48 +26,75 @@ ${asked}
 
 Answer:
 `;
-    console.log(prompt);
 
-    const answer = await openai.createCompletion({
-        model: "text-davinci-003",
-        prompt,
-        max_tokens: 2500,
-        temperature: 0.5,
+    const answer = await fetch("https://api.openai.com/v1/completions", {
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+        method: "POST",
+        body: JSON.stringify({
+            model: "text-davinci-003",
+            prompt,
+            max_tokens: 2000,
+            temperature: 0.5,
+            stream: true,
+        }),
     });
 
-    console.log(answer.data);
-    return answer.data;
-}
-
-export default async function (req: NextApiRequest, res: NextApiResponse) {
-    if (!configuration.apiKey) {
-        res.status(500).json({
-            error: {
-                message: "OpenAI API key not configured, please follow instructions in README.md",
-            },
-        });
-        return;
+    if (answer.status !== 200) {
+        throw new Error(`OpenAI API returned an error ${answer.status}`);
     }
 
-    const query = req.body.query;
+    const stream = new ReadableStream({
+        async start(controller) {
+            const onParse = (event: ParsedEvent | ReconnectInterval) => {
+                if (event.type === "event") {
+                    const data = event.data;
+
+                    if (data === "[DONE]") {
+                        controller.close();
+                        return;
+                    }
+
+                    try {
+                        const json = JSON.parse(data);
+                        const text = json.choices[0].text;
+                        const queue = encoder.encode(text);
+                        controller.enqueue(queue);
+                    } catch (e: any) {
+                        console.log("error in parsing stream response", e.message);
+                        controller.error(e);
+                    }
+                }
+            };
+
+            const parser = createParser(onParse);
+
+            for await (const chunk of answer.body as any) {
+                parser.feed(decoder.decode(chunk));
+            }
+        },
+    });
+
+    return stream;
+}
+
+export default async function (req: Request, res: Response) {
+    if (!configuration.apiKey) {
+        return new Response("OpenAI key not provided", { status: 500 });
+    }
+
+    const { query, context } = (await req.json()) as {
+        query: string;
+        context: string;
+    };
 
     try {
-        const response = await findMatchingEmbeddings(query);
-        const shows: string[] = [];
-        for (const r of response) {
-            shows.push(`Show Title: "${r.show_title}" Show Description: "${r.show_description}"`);
-        }
-
-        const answer = await askGpt(shows.join(", "), query);
-        const choices = answer.choices.map((c) => c.text);
-
-        res.status(200).json({ id: answer.id, context: shows, choices: choices });
-    } catch (error: any) {
-        console.error(`error in askgpt: ${error.message}`);
-        res.status(500).json({
-            error: {
-                message: error.message,
-            },
-        });
+        const stream = await askGpt(context, query);
+        return new Response(stream);
+    } catch (e: any) {
+        console.error(e);
+        return new Response(e, { status: 500 });
     }
 }
