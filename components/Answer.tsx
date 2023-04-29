@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import styles from "./answer.module.css";
 
 interface AnswerProps {
     text: string;
@@ -13,5 +14,10 @@ export const Answer: React.FC<AnswerProps> = ({ text }) => {
         }
     }, [text]);
 
-    return <div className="prose w-full md:text-xl" dangerouslySetInnerHTML={{ __html: text }} />;
+    return (
+        <div
+            className={`prose w-full md:text-xl ${styles.fadeIn}`}
+            dangerouslySetInnerHTML={{ __html: text }}
+        />
+    );
 };
